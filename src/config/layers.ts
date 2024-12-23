@@ -20,6 +20,33 @@ export const wmsLayers: WMSLayerConfig[] = [
     token: '1b6805e6b4e3c9d04af49b8245ab7b20'
   }, */
   {
+    id: 'ao',
+    name: 'Arbejdsområde',
+    url: 'https://hdgis.gis.dk/geoserver/hdgis/wms',
+    layers: 'hdgis:DynamicMapStands',
+    format: 'image/png',
+    transparent: true,
+    requiresWSOID: true
+  },
+  {
+    id: 'stakke',
+    name: 'Stakke',
+    url: 'https://hdgis.gis.dk/geoserver/hdgis/wms',
+    layers: 'hdgis:DynamicMapPoints',
+    format: 'image/png',
+    transparent: true,
+    requiresWSOID: true
+  },
+  {
+    id: 'skovkort',
+    name: 'Skovkort',
+    url: 'https://hdgis.gis.dk/geoserver/hdgis/wms',
+    layers: 'hdgis:SkovkortDynamicMaps',
+    format: 'image/png',
+    transparent: true,
+    requiresBlockId: true
+  },
+  {
     id: 'hydro',
     name: 'Hydro',
     url: 'https://api.dataforsyningen.dk/forvaltning2',
@@ -54,31 +81,4 @@ export const wmsLayers: WMSLayerConfig[] = [
     format: 'image/png',
     transparent: true
   },
-  {
-    id: 'skovkort',
-    name: 'Skovkort',
-    url: 'https://hdgis.gis.dk/geoserver/hdgis/wms',
-    layers: 'hdgis:SkovkortDynamicMaps',
-    format: 'image/png',
-    transparent: true,
-    requiresBlockId: true
-  },
-  {
-    id: 'ao',
-    name: 'AO',
-    url: 'https://hdgis.gis.dk/geoserver/hdgis/wms',
-    layers: 'hdgis:DynamicMapStands',
-    format: 'image/png',
-    transparent: true,
-    requiresBlockId: true
-  },
-  {
-    id: 'stakke',
-    name: 'Stakke',
-    url: 'https://hdgis.gis.dk/geoserver/hdgis/wms',
-    layers: 'hdgis:DynamicMapPoints',
-    format: 'image/png',
-    transparent: true,
-    requiresBlockId: true
-  }
 ];

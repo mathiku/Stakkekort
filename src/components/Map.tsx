@@ -7,6 +7,7 @@ import { wmsLayers } from '../config/layers';
 
 const Map = () => {
   const { blockId } = useParams();
+  const { wsoid } = useParams();
   const [error, setError] = useState<string | null>(null);
   const [activeLayers, setActiveLayers] = useState<string[]>([]);
 
@@ -14,7 +15,10 @@ const Map = () => {
     if (!blockId) {
       setError('No block ID provided');
     }
-  }, [blockId]);
+    if (!wsoid) {
+      setError('No WSOID provided');
+    }
+  }, [blockId, wsoid]);
 
   const handleLayerToggle = (layerId: string) => {
     setActiveLayers(prev =>
@@ -67,7 +71,11 @@ const Map = () => {
               params={{
                 layers: layer.layers,
                 ...(layer.token ? { token: layer.token } : {}),
-                ...(layer.requiresBlockId ? { CQL_FILTER: `blockid='${blockId}'` } : {})
+                ...(layer.id === 'ao' || layer.id === 'stakke' 
+                  ? { CQL_FILTER: `blockid='${blockId}' AND workingsiteid='${wsoid}'` }
+                  : layer.requiresBlockId 
+                    ? { CQL_FILTER: `blockid='${blockId}'` }
+                    : {})
               }}
             />
           );
