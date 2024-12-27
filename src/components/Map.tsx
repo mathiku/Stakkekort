@@ -6,8 +6,8 @@ import LayerControl from './LayerControl';
 import { wmsLayers } from '../config/layers';
 
 const Map = () => {
-  const { blockId } = useParams();
-  const { wsoid } = useParams();
+  const { combinedkId } = useParams();
+  const [blockId, wsoid] = combinedkId?.split('_') ?? [];
   const [error, setError] = useState<string | null>(null);
   const [activeLayers, setActiveLayers] = useState<string[]>([]);
 
