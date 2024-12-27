@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { MapContainer, TileLayer, WMSTileLayer } from 'react-leaflet';
+import { MapContainer, TileLayer, WMSTileLayer, useMap, Marker, Popup } from 'react-leaflet';
 import { useParams } from 'react-router-dom';
 import 'leaflet/dist/leaflet.css';
 import LayerControl from './LayerControl';
 import { wmsLayers } from '../config/layers';
+import L from 'leaflet';
 
 const Map = () => {
   const { combinedkId } = useParams();
@@ -27,6 +28,11 @@ const Map = () => {
         : [...prev, layerId]
     );
   };
+
+  // Get layers in correct draw order
+  const orderedLayers = wmsLayers
+    .filter(layer => activeLayers.includes(layer.id))
+    .sort((a, b) => b.drawOrder - a.drawOrder);  // Higher drawOrder on top
 
   if (error) {
     return (
@@ -55,34 +61,48 @@ const Map = () => {
         />
         
         {/* WMS layers */}
-        {activeLayers.map(layerId => {
-          const layer = wmsLayers.find(l => l.id === layerId);
-          if (!layer) return null;
-
-          return (
-            <WMSTileLayer
-              key={layer.id}
-              url={layer.url}
-              layers={layer.layers}
-              format={layer.format}
-              transparent={layer.transparent}
-              version="1.1.0"
-              opacity={layer.id === 'skyggekort' ? 0.5 : 1}
-              params={{
-                layers: layer.layers,
-                ...(layer.token ? { token: layer.token } : {}),
-                ...(layer.id === 'ao' || layer.id === 'stakke' 
-                  ? { CQL_FILTER: `blockid='${blockId}' AND workingsiteid='${wsoid}'` }
-                  : layer.requiresBlockId 
-                    ? { CQL_FILTER: `blockid='${blockId}'` }
-                    : {})
-              }}
-            />
-          );
-        })}
+        {orderedLayers.map(layer => (
+          <WMSTileLayer
+            key={layer.id}
+            url={layer.url}
+            layers={layer.layers}
+            format={layer.format}
+            transparent={layer.transparent}
+            version="1.1.0"
+            opacity={layer.id === 'skyggekort' ? 0.5 : 1}
+            params={{
+              layers: layer.layers,
+              ...(layer.token ? { token: layer.token } : {}),
+              ...(layer.id === 'ao' || layer.id === 'stakke' 
+                ? { CQL_FILTER: `blockid='${blockId}' AND workingsiteid='${wsoid}'` }
+                : layer.requiresBlockId 
+                  ? { CQL_FILTER: `blockid='${blockId}'` }
+                  : {})
+            }}
+          />
+        ))}
+        <LocationMarker />
       </MapContainer>
     </div>
   );
 };
+
+function LocationMarker() {
+  const map = useMap();
+  const [position, setPosition] = useState<L.LatLng | null>(null);
+
+  useEffect(() => {
+    map.locate().on("locationfound", function (e) {
+      setPosition(e.latlng);
+      map.flyTo(e.latlng, map.getZoom());
+    });
+  }, [map]);
+
+  return position === null ? null : (
+    <Marker position={position}>
+      <Popup>You are here</Popup>
+    </Marker>
+  );
+}
 
 export default Map;

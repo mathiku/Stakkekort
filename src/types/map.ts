@@ -8,4 +8,5 @@ export interface WMSLayerConfig {
   token?: string;
   requiresBlockId?: boolean;
   requiresWSOID?: boolean;
+  drawOrder: number;
 }
