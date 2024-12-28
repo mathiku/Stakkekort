@@ -7,19 +7,15 @@ import { wmsLayers } from '../config/layers';
 import L from 'leaflet';
 
 const Map = () => {
-  const { combinedkId } = useParams();
-  const [blockId, wsoid] = combinedkId?.split('_') ?? [];
+  const { pk } = useParams();
   const [error, setError] = useState<string | null>(null);
   const [activeLayers, setActiveLayers] = useState<string[]>([]);
 
   useEffect(() => {
-    if (!blockId) {
-      setError('No block ID provided');
+    if (!pk) {
+      setError('No primary key provided');
     }
-    if (!wsoid) {
-      setError('No WSOID provided');
-    }
-  }, [blockId, wsoid]);
+  }, [pk]);
 
   const handleLayerToggle = (layerId: string) => {
     setActiveLayers(prev =>
@@ -50,8 +46,10 @@ const Map = () => {
         onLayerToggle={handleLayerToggle}
       />
       <MapContainer
-        center={[55.7, 12.5]}
-        zoom={10}
+        bounds={[
+          [55.2, 11.8],  // Southwest corner [lat, lng]
+          [56.2, 13.2]   // Northeast corner [lat, lng]
+        ]}
         style={{ height: '100%', width: '100%' }}
       >
         {/* Base map layer */}
@@ -68,18 +66,16 @@ const Map = () => {
             layers={layer.layers}
             format={layer.format}
             transparent={layer.transparent}
-            version="1.1.0"
+            version="1.1.1"
             opacity={layer.id === 'skyggekort' ? 0.5 : 1}
             params={{
               layers: layer.layers,
-              ...(layer.token ? { token: layer.token } : {}),
-              ...(layer.id === 'ao' || layer.id === 'stakke' 
-                ? { CQL_FILTER: `blockid='${blockId}' AND workingsiteid='${wsoid}'` }
-                : layer.requiresBlockId 
-                  ? { CQL_FILTER: `blockid='${blockId}'` }
-                  : {})
+              ...(layer.token && { token: layer.token }),
+              ...(layer.requiresPK && { 
+                CQL_FILTER: `pk='${pk}'`
+              })
             }}
-          />
+                      />
         ))}
         <LocationMarker />
       </MapContainer>
@@ -94,7 +90,7 @@ function LocationMarker() {
   useEffect(() => {
     map.locate().on("locationfound", function (e) {
       setPosition(e.latlng);
-      map.flyTo(e.latlng, map.getZoom());
+      //map.flyTo(e.latlng, map.getZoom());
     });
   }, [map]);
 

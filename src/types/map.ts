@@ -6,7 +6,6 @@ export interface WMSLayerConfig {
   format: string;
   transparent: boolean;
   token?: string;
-  requiresBlockId?: boolean;
-  requiresWSOID?: boolean;
+  requiresPK?: boolean;
   drawOrder: number;
 }
