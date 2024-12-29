@@ -11,7 +11,8 @@ const Map = () => {
   const [error, setError] = useState<string | null>(null);
   const [activeLayers, setActiveLayers] = useState<string[]>(['ao', 'stakke']);
   const mapRef = useRef<L.Map | null>(null);
-  
+  const [bounds, setBounds] = useState<[[number, number], [number, number]] | null>(null);  // Start with null
+
   useEffect(() => {
     if (!pk) return;
     
@@ -50,23 +51,18 @@ const Map = () => {
     
     const fetchAndSetBounds = async () => {
       const bounds = await fetchFeatureInfo();
-      console.log('Setting bounds to:', bounds);
       if (bounds) {
         setBounds(bounds);
-        if (mapRef.current) {
-          mapRef.current.fitBounds(bounds);
-        }
       }
     };
 
     fetchAndSetBounds();
   }, [pk]);
-  
-  const [bounds, setBounds] = useState<[[number, number], [number, number]]>([
-    [54, 8],  // Default bounds for Denmark
-    [58, 16]
-  ]);
-  
+
+  if (!bounds) {
+    return <div>Loading...</div>;  // Or your preferred loading indicator
+  }
+
   const handleLayerToggle = (layerId: string) => {
     setActiveLayers(prev =>
       prev.includes(layerId)

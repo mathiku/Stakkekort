@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { WMSLayerConfig } from '../types/map';
 
 interface LayerControlProps {
@@ -12,15 +12,25 @@ const LayerControl: React.FC<LayerControlProps> = ({
   activeLayers,
   onLayerToggle,
 }) => {
-  return (
-    <div className="absolute top-4 right-4 bg-white p-4 rounded-lg shadow-lg z-[1000] max-h-[calc(100vh-2rem)] overflow-y-auto">
-      <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-        Lag
-      </h3>
+  const [isCollapsed, setIsCollapsed] = useState(window.innerWidth < 768); // Collapsed by default on small screens
 
-      <div className="space-y-2">
+  return (
+    <div className="absolute top-4 right-4 bg-white rounded-lg shadow-lg z-[1000]">
+      {/* Header - always visible */}
+      <div 
+        className="p-4 cursor-pointer flex items-center justify-between"
+        onClick={() => setIsCollapsed(!isCollapsed)}
+      >
+        <h3 className="text-lg font-semibold">Lag</h3>
+        <span className="ml-2">
+          {isCollapsed ? '▼' : '▲'}
+        </span>
+      </div>
+
+      {/* Collapsible content */}
+      <div className={`${isCollapsed ? 'hidden' : 'block'} p-4 pt-0 max-h-[calc(100vh-8rem)] overflow-y-auto`}>
         {layers.map((layer) => (
-          <label key={layer.id} className="flex items-center space-x-2">
+          <label key={layer.id} className="flex items-center space-x-2 mb-2">
             <input
               type="checkbox"
               checked={activeLayers.includes(layer.id)}
