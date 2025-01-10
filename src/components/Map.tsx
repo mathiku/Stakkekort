@@ -17,35 +17,50 @@ const Map = () => {
     if (!pk) return;
     
     const fetchFeatureInfo = async () => {
-      const wfsParams = {
+      const getWfsParams = (typeName: string) => ({
         service: 'WFS',
         version: '1.0.0',
         request: 'GetFeature',
-        typeName: 'hdgis:DynamicMapStands',
+        typeName,
         maxFeatures: '1',
         outputFormat: 'application/json',
         CQL_FILTER: `pk='${pk}'`
-      };
+      });
       
-      const url = `https://hdgis.gis.dk/geoserver/hdgis/ows?${new URLSearchParams(wfsParams)}`;
-      
-      try {
+      const tryFetch = async (typeName: string) => {
+        const url = `https://hdgis.gis.dk/geoserver/hdgis/ows?${new URLSearchParams(getWfsParams(typeName))}`;
         const response = await fetch(url);
         const data = await response.json();
+        if (!data.features || data.features.length === 0) {
+          throw new Error('No features found');
+        }
+        return data;
+      };
+      
+      try {
+        // Try DynamicMapStands first
+        const data = await tryFetch('hdgis:DynamicMapStands');
         const { bbxmax, bbxmin, bbymax, bbymin } = data.features[0].properties;
-        console.log('Fetched bounds:', { bbxmax, bbxmin, bbymax, bbymin });
-        const newBounds = [
+        return [
           [bbymin, bbxmin],  // Southwest corner [lat, lng]
           [bbymax, bbxmax]   // Northeast corner [lat, lng]
         ] as [[number, number], [number, number]];
-        console.log('Formatted bounds:', newBounds);
-        return newBounds;
       } catch (error) {
-        console.error('Error fetching feature info:', error);
-        return [
-          [54, 8],
-          [58, 16]
-        ] as [[number, number], [number, number]];
+        try {
+          // If DynamicMapStands fails, try DynamicMapPoints
+          const data = await tryFetch('hdgis:DynamicMapPoints');
+          const { bbxmax, bbxmin, bbymax, bbymin } = data.features[0].properties;
+          return [
+            [bbymin, bbxmin],  // Southwest corner [lat, lng]
+            [bbymax, bbxmax]   // Northeast corner [lat, lng]
+          ] as [[number, number], [number, number]];
+        } catch (fallbackError) {
+          console.error('Error fetching feature info:', fallbackError);
+          return [
+            [54, 8],
+            [58, 16]
+          ] as [[number, number], [number, number]];
+        }
       }
     };
     
@@ -60,21 +75,27 @@ const Map = () => {
   }, [pk]);
 
   if (!bounds) {
-    return <div>Loading...</div>;  // Or your preferred loading indicator
+    return <div>Henter lag...</div>;  // Or your preferred loading indicator
   }
 
   const handleLayerToggle = (layerId: string) => {
-    setActiveLayers(prev =>
-      prev.includes(layerId)
+    console.log('Before toggle - Active layers:', activeLayers);
+    console.log('Toggling layer:', layerId);
+    setActiveLayers(prev => {
+      const newLayers = prev.includes(layerId)
         ? prev.filter(id => id !== layerId)
-        : [...prev, layerId]
-    );
+        : [...prev, layerId];
+      console.log('After toggle - Active layers:', newLayers);
+      return newLayers;
+    });
   };
 
   // Get layers in correct draw order
   const orderedLayers = wmsLayers
     .filter(layer => activeLayers.includes(layer.id))
     .sort((a, b) => b.drawOrder - a.drawOrder);  // Higher drawOrder on top
+
+  console.log('Ordered layers:', orderedLayers.map(l => ({ id: l.id, drawOrder: l.drawOrder })));
 
   if (error) {
     return (
@@ -98,29 +119,59 @@ const Map = () => {
       >
         {/* Base map layer */}
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          attribution=''
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         
-        {/* WMS layers */}
-        {orderedLayers.map(layer => (
-          <WMSTileLayer
-            key={layer.id}
-            url={layer.url}
-            layers={layer.layers}
-            format={layer.format}
-            transparent={layer.transparent}
-            version="1.1.1"
-            opacity={layer.id === 'skyggekort' ? 0.5 : 1}
-            params={{
-              layers: layer.layers,
-              ...(layer.token && { token: layer.token }),
-              ...(layer.requiresPK && { 
-                CQL_FILTER: `pk='${pk}'`
-              })
-            }}
-                      />
-        ))}
+        {/* Base WMS layers (ortofoto and skaermkort) */}
+        {orderedLayers
+          .filter(layer => layer.id === 'ortofoto' || layer.id === 'skaermkort')
+          .map(layer => (
+            <WMSTileLayer
+              key={`wms-${layer.id}`}
+              url={layer.url}
+              layers={layer.layers}
+              format={layer.format}
+              transparent={layer.transparent}
+              version="1.1.1"
+              zIndex={1}
+              params={{
+                layers: layer.layers,
+                ...(layer.token ? { token: layer.token } : {})
+              }}
+            />
+          ))}
+        
+        {/* Overlay WMS layers */}
+        {orderedLayers
+          .filter(layer => layer.id !== 'ortofoto' && layer.id !== 'skaermkort')
+          .map(layer => {
+            console.log('Rendering overlay layer:', layer.id, {
+              transparent: layer.transparent,
+              drawOrder: layer.drawOrder,
+              hasToken: !!layer.token,
+              requiresPK: layer.requiresPK
+            });
+            return (
+              <WMSTileLayer
+                key={`wms-${layer.id}`}
+                url={layer.url}
+                layers={layer.layers}
+                format={layer.format}
+                transparent={layer.transparent}
+                version="1.1.1"
+                opacity={layer.id === 'skyggekort' ? 0.5 : 1}
+                zIndex={layer.drawOrder + 100} // Ensure overlays are always above base layers
+                params={{
+                  layers: layer.layers,
+                  ...(layer.token ? { token: layer.token } : {}),
+                  ...(layer.requiresPK && pk ? { 
+                    CQL_FILTER: `pk='${pk}'`
+                  } : {})
+                }}
+              />
+            );
+          })}
         <LocationMarker />
       </MapContainer>
     </div>
@@ -148,29 +199,46 @@ function LocationMarker() {
     if (!map || !pk) return;
 
     const fetchFeatureInfo = async () => {
-      const wfsParams = {
+      const getWfsParams = (typeName: string) => ({
         service: 'WFS',
         version: '1.0.0',
         request: 'GetFeature',
-        typeName: 'hdgis:DynamicMapStands',
+        typeName,
         maxFeatures: '1',
         outputFormat: 'application/json',
         CQL_FILTER: `pk='${pk}'`
-      };
-
-      const url = `https://hdgis.gis.dk/geoserver/hdgis/ows?${new URLSearchParams(wfsParams)}`;
+      });
       
-      try {
+      const tryFetch = async (typeName: string) => {
+        const url = `https://hdgis.gis.dk/geoserver/hdgis/ows?${new URLSearchParams(getWfsParams(typeName))}`;
         const response = await fetch(url);
         const data = await response.json();
+        if (!data.features || data.features.length === 0) {
+          throw new Error('No features found');
+        }
+        return data;
+      };
+
+      try {
+        // Try DynamicMapStands first
+        const data = await tryFetch('hdgis:DynamicMapStands');
         const { bbxmax, bbxmin, bbymax, bbymin } = data.features[0].properties;
-        console.log({ bbxmax, bbxmin, bbymax, bbymin });
         setBounds([
           [bbymin, bbxmin],  // Southwest corner [lat, lng]
           [bbymax, bbxmax]   // Northeast corner [lat, lng]
         ]);
       } catch (error) {
-        console.error('Error fetching feature info:', error);
+        try {
+          // If DynamicMapStands fails, try DynamicMapPoints
+          const data = await tryFetch('hdgis:DynamicMapPoints');
+          const { bbxmax, bbxmin, bbymax, bbymin } = data.features[0].properties;
+          setBounds([
+            [bbymin, bbxmin],  // Southwest corner [lat, lng]
+            [bbymax, bbxmax]   // Northeast corner [lat, lng]
+          ]);
+        } catch (fallbackError) {
+          console.error('Error fetching feature info:', fallbackError);
+        }
       }
     };
 
