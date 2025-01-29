@@ -8,4 +8,7 @@ export interface WMSLayerConfig {
   token?: string;
   requiresPK?: boolean;
   drawOrder: number;
+  params?: {
+    [key: string]: string;
+  };
 }

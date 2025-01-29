@@ -19,7 +19,7 @@ export const wmsLayers: WMSLayerConfig[] = [
     format: 'image/png',
     transparent: true,
     requiresPK: true,
-    drawOrder: 7
+    drawOrder: 9
   },
   {
     id: 'skovkort',
@@ -81,4 +81,65 @@ export const wmsLayers: WMSLayerConfig[] = [
    token: '1b6805e6b4e3c9d04af49b8245ab7b20',
    drawOrder: 0
   },
+  {
+    id: 'fortidsminder',
+    name: 'Fortidsminder',
+    url: 'https://www.kulturarv.dk/ffgeoserver/public/wms',
+    layers: 'fundogfortidsminder_punkt_fredet',
+    format: 'image/png',
+    transparent: true,
+    drawOrder: 1
+  },
+  {
+    id: 'beskyttelseslinjer',
+    name: 'Beskyttelseslinjer',
+    url: 'https://www.kulturarv.dk/ffgeoserver/public/wms',
+    layers: 'fundogfortidsminder_areal_beskyttelse',
+    format: 'image/png',
+    transparent: true,
+    drawOrder: 1
+  },
+  {
+    id: 'diger',
+    name: 'Beskyttede sten- og jorddiger',
+    url: 'https://arealeditering-dist-geo.miljoeportal.dk/geoserver/wms',
+    layers: 'dai:bes_sten_jorddiger_2022',
+    format: 'image/png',
+    transparent: true,
+    drawOrder: 1
+  },
+  {
+    id: 'natura2000',
+    name: 'Natura 2000',
+    url: 'https://miljoegis.mim.dk/wms',
+    layers: 'theme-pg-natura_2000_omraader',
+    format: 'image/png',
+    transparent: true,
+    drawOrder: 13,
+    params: {
+      servicename: 'miljoegis-natura2000_wms'
+    }
+  },
+  {
+    id: 'hnv',
+    name: 'HNV',
+    url: 'https://arld-extgeo.miljoeportal.dk/geoserver/ows',
+    layers: 'hnv:HNV2021_20210226',
+    format: 'image/png',
+    transparent: true,
+    drawOrder: 14
+  },
+  {
+    id: 'fredskov',
+    name: 'Fredskov',
+    url: 'https://services.datafordeler.dk/MATRIKLEN2/MatGaeldendeOgForeloebigWMS/1.0.0/Wms',
+    layers: 'FredskovFlade_Gaeldende',
+    format: 'image/png',
+    transparent: true,
+    drawOrder: 15,
+    params: {
+      username: 'UFZLDDPIJS',
+      password: 'DAIdatafordel123'
+    }
+  }
 ];
