@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, WMSTileLayer, useMap, Marker, Popup } from 're
 import { useParams } from 'react-router-dom';
 import 'leaflet/dist/leaflet.css';
 import LayerControl from './LayerControl';
+import { useMapPoints } from './MapPoints';
 import { wmsLayers } from '../config/layers';
 import L, { bounds } from 'leaflet';
 import 'proj4';
@@ -49,7 +50,13 @@ const wmsParams = {
 const Map = () => {
   const { pk } = useParams();
   const [error, setError] = useState<string | null>(null);
-  const [activeLayers, setActiveLayers] = useState<string[]>(['ao', 'stakke']);
+  const [activeLayers, setActiveLayers] = useState<string[]>([
+    'skaermkort',  // Skærmkort
+    'ao',          // AO
+    'stakke',      // Stak
+    'skovkort',    // Skovkort
+    'veje'         // Vejtema
+  ]);
   const mapRef = useRef<L.Map | null>(null);
   const [bounds, setBounds] = useState<[[number, number], [number, number]] | null>(null);  // Start with null
 
@@ -160,9 +167,26 @@ const Map = () => {
     }
 
     setActiveLayers(prev => {
-      const newLayers = prev.includes(layerId)
-        ? prev.filter(id => id !== layerId)
-        : [...prev, layerId];
+      let newLayers = [...prev];
+      
+      if (layerId === 'veje') {
+        // If toggling Vejtema, also toggle the map symbol layers
+        if (prev.includes('veje')) {
+          // Remove Vejtema and map symbols
+          newLayers = newLayers.filter(id => 
+            !['veje', 'containermapsymbols', 'vejemapsymbols'].includes(id)
+          );
+        } else {
+          // Add Vejtema and map symbols
+          newLayers.push('veje', 'containermapsymbols', 'vejemapsymbols');
+        }
+      } else {
+        // Handle other layers normally
+        newLayers = prev.includes(layerId)
+          ? prev.filter(id => id !== layerId)
+          : [...prev, layerId];
+      }
+      
       return newLayers;
     });
   };
@@ -222,38 +246,30 @@ const Map = () => {
         {/* Overlay WMS layers */}
         {orderedLayers
           .filter(layer => layer.id !== 'ortofoto' && layer.id !== 'skaermkort')
-          .map(layer => (
-            <WMSTileLayer
-              key={`wms-${layer.id}`}
-              url={layer.url}
-              layers={layer.layers}
-              format={layer.format}
-              transparent={layer.id === 'fredskov' ? layer.transparent.toString().toUpperCase() : layer.transparent}
-              version={layer.id === 'fredskov' ? '1.3.0' : '1.1.1'}
-              opacity={layer.id === 'skyggekort' ? 0.5 : 1}
-              zIndex={layer.drawOrder + 100}
-              params={{
-                layers: layer.layers,
-                ...(layer.token ? { token: layer.token } : {}),
-                ...(layer.requiresPK && pk ? { CQL_FILTER: `pk='${pk}'` } : {}),
-                ...(layer.params || {}),
-                ...(layer.id === 'fredskov' ? {
-                  DPI: '192',
-                  MAP_RESOLUTION: '192',
-                  FORMAT_OPTIONS: 'dpi:192'
-                } : {})
-              }}
-              crs={
-                layer.id === 'natura2000' 
-                  ? L.CRS.EPSG25832 
-                  : layer.id === 'fredskov' 
-                    ? L.CRS.EPSG4326 
-                    : L.CRS.EPSG3857
-              }
-            />
-          ))}
+          .map(layer => {
+            const isMapSymbol = layer.id === 'containermapsymbols' || layer.id === 'vejemapsymbols';
+            return (
+              <WMSTileLayer
+                key={`wms-${layer.id}`}
+                url={layer.url}
+                layers={layer.layers}
+                format="image/png"
+                transparent={true}
+                version={isMapSymbol ? '1.1.0' : layer.id === 'fredskov' ? '1.3.0' : '1.1.1'}
+                opacity={layer.id === 'skyggekort' ? 0.5 : 1}
+                zIndex={layer.drawOrder + 100}
+                params={{
+                  layers: layer.layers,
+                  styles: '',
+                  ...(layer.requiresPK && pk ? { CQL_FILTER: `pk='${pk}'` } : {}),
+                  ...(layer.params || {})
+                }}
+              />
+            );
+          })}
         <LocationMarker />
         <DigerWMSLayer />
+        <NavigateButton />
       </MapContainer>
     </div>
   );
@@ -341,6 +357,42 @@ const DigerWMSLayer = () => {
       params={wmsParams}
       opacity={0.7}
     />
+  );
+};
+
+// Add this function inside the Map component
+const NavigateButton = () => {
+  const map = useMap();
+  const points = useMapPoints();
+  
+  const handleNavigate = () => {
+    const center = map.getCenter();
+    
+    // Create waypoints string from points
+    const waypoints = points
+      .map(point => `${point.coordinates[1]},${point.coordinates[0]}`) // Convert to lat,lng format
+      .join('|');
+    
+    // Build Google Maps URL with waypoints
+    const googleMapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${center.lat},${center.lng}${waypoints ? `&waypoints=${waypoints}` : ''}`;
+    
+    console.log('Opening navigation with points:', points);
+    console.log('Google Maps URL:', googleMapsUrl);
+    
+    window.open(googleMapsUrl, '_blank');
+  };
+
+  return (
+    <button 
+      onClick={handleNavigate}
+      className="absolute bottom-5 right-5 z-[1000] bg-white p-2 rounded-lg shadow-md hover:bg-gray-100"
+      title="Navigate to this location"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+      </svg>
+    </button>
   );
 };
 
