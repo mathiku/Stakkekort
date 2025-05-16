@@ -1,22 +1,21 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { MapContainer, TileLayer, WMSTileLayer, useMap, Marker, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, WMSTileLayer, useMap, Marker, Popup, Polyline, LayerGroup } from 'react-leaflet';
 import { useParams } from 'react-router-dom';
 import 'leaflet/dist/leaflet.css';
+import '../styles/leaflet-overrides.css';  // Import our CSS overrides
 import LayerControl from './LayerControl';
 import { useMapPoints } from './MapPoints';
 import { wmsLayers } from '../config/layers';
-import L, { bounds } from 'leaflet';
+import L from 'leaflet';
 import 'proj4';
 import 'proj4leaflet';
+import Logo from './Logo';
+import MapLogo from './MapLogo';
+import proj4 from 'proj4';
+import 'leaflet.markercluster';
 
-declare module 'leaflet' {
-  namespace CRS {
-    const EPSG25832: L.CRS;
-  }
-}
-
-// Define EPSG:25832 if not already defined
-L.CRS.EPSG25832 = new L.Proj.CRS(
+// Define EPSG:25832
+const epsg25832 = new L.Proj.CRS(
   'EPSG:25832',
   '+proj=utm +zone=32 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs',
   {
@@ -44,21 +43,35 @@ const wmsParams = {
   DPI: 192,
   MAP_RESOLUTION: 192,
   FORMAT_OPTIONS: 'dpi:192',
-  CRS: 'CRS:84'
+  CRS: 'CRS:84',
+  layers: DIGER_LAYER  // Add this to satisfy WMSParams type
 };
+
+interface RouteInfo {
+  isVisible: boolean;
+  points: [number, number][];
+}
 
 const Map = () => {
   const { pk } = useParams();
   const [error, setError] = useState<string | null>(null);
+  const [routeInfo, setRouteInfo] = useState<RouteInfo>({ isVisible: false, points: [] });
   const [activeLayers, setActiveLayers] = useState<string[]>([
     'skaermkort',  // Skærmkort
     'ao',          // AO
-    'stakke',      // Stak
     'skovkort',    // Skovkort
-    'veje'         // Vejtema
+    'veje',        // Vejtema
+    'containermapsymbols', // Add map symbols initially since veje is active
+    'vejemapsymbols',      // Add map symbols initially since veje is active
+    'stakke'       // Add stakke layer initially
   ]);
   const mapRef = useRef<L.Map | null>(null);
-  const [bounds, setBounds] = useState<[[number, number], [number, number]] | null>(null);  // Start with null
+  const [bounds, setBounds] = useState<[[number, number], [number, number]] | null>(null);
+  const [popupContent, setPopupContent] = useState<string | null>(null);
+  const [popupPosition, setPopupPosition] = useState<L.LatLng | null>(null);
+  const [storageFeatures, setStorageFeatures] = useState<any[]>([]);
+  const [labels, setLabels] = useState<L.LayerGroup | null>(null);
+  const [mapReady, setMapReady] = useState(false);
 
   useEffect(() => {
     if (!pk) return;
@@ -73,41 +86,51 @@ const Map = () => {
         outputFormat: 'application/json',
         CQL_FILTER: `pk='${pk}'`
       });
-      
+
       const tryFetch = async (typeName: string) => {
         const url = `https://hdgis.gis.dk/geoserver/hdgis/ows?${new URLSearchParams(getWfsParams(typeName))}`;
         const response = await fetch(url);
         const data = await response.json();
         if (!data.features || data.features.length === 0) {
-          throw new Error('No features found');
+          throw new Error(`No features found for ${typeName}`);
         }
-        return data;
+        return data.features[0].properties;
       };
-      
+
       try {
-        // Try DynamicMapStands first
-        const data = await tryFetch('hdgis:DynamicMapStands');
-        const { bbxmax, bbxmin, bbymax, bbymin } = data.features[0].properties;
-        return [
-          [bbymin, bbxmin],  // Southwest corner [lat, lng]
-          [bbymax, bbxmax]   // Northeast corner [lat, lng]
-        ] as [[number, number], [number, number]];
-      } catch (error) {
-        try {
-          // If DynamicMapStands fails, try DynamicMapPoints
-          const data = await tryFetch('hdgis:DynamicMapPoints');
-          const { bbxmax, bbxmin, bbymax, bbymin } = data.features[0].properties;
-          return [
-            [bbymin, bbxmin],  // Southwest corner [lat, lng]
-            [bbymax, bbxmax]   // Northeast corner [lat, lng]
-          ] as [[number, number], [number, number]];
-        } catch (fallbackError) {
-          console.error('Error fetching feature info:', fallbackError);
-          return [
-            [54, 8],
-            [58, 16]
-          ] as [[number, number], [number, number]];
+        const standsProperties = await tryFetch('hdgis:DynamicMapStands');
+        const pointsProperties = await tryFetch('hdgis:DynamicMapPoints');
+
+        const allBbysMin = [standsProperties.bbymin, pointsProperties.bbymin];
+        const allBbxsMin = [standsProperties.bbxmin, pointsProperties.bbxmin];
+        const allBbysMax = [standsProperties.bbymax, pointsProperties.bbymax];
+        const allBbxsMax = [standsProperties.bbxmax, pointsProperties.bbxmax];
+
+        const overallBbymin = Math.min(...allBbysMin.filter(v => typeof v === 'number'));
+        const overallBbxmin = Math.min(...allBbxsMin.filter(v => typeof v === 'number'));
+        const overallBbymax = Math.max(...allBbysMax.filter(v => typeof v === 'number'));
+        const overallBbxmax = Math.max(...allBbxsMax.filter(v => typeof v === 'number'));
+
+        if (
+          typeof overallBbymin !== 'number' ||
+          typeof overallBbxmin !== 'number' ||
+          typeof overallBbymax !== 'number' ||
+          typeof overallBbxmax !== 'number'
+        ) {
+          throw new Error('Invalid bounding box coordinates received');
         }
+
+        return [
+          [overallBbymin, overallBbxmin],  // Southwest corner [lat, lng]
+          [overallBbymax, overallBbxmax]   // Northeast corner [lat, lng]
+        ] as [[number, number], [number, number]];
+
+      } catch (error) {
+        console.error('Error fetching combined feature info:', error);
+        return [
+          [54, 8],
+          [58, 16]
+        ] as [[number, number], [number, number]];
       }
     };
     
@@ -120,6 +143,217 @@ const Map = () => {
 
     fetchAndSetBounds();
   }, [pk]);
+
+  // Add click handler for WMS layers
+  useEffect(() => {
+    if (!mapRef.current) return;
+
+    const handleMapClick = async (e: L.LeafletMouseEvent) => {
+      const map = mapRef.current;
+      if (!map) return;
+
+      const stakkeLayer = wmsLayers.find(l => l.id === 'stakke');
+      if (!stakkeLayer) return;
+
+      const point = map.latLngToContainerPoint(e.latlng);
+      const size = map.getSize();
+      if (!size) return;
+
+      const params = new URLSearchParams({
+        SERVICE: 'WMS',
+        VERSION: '1.3.0',
+        REQUEST: 'GetFeatureInfo',
+        BBOX: map.getBounds().toBBoxString(),
+        CRS: 'EPSG:4326',
+        WIDTH: size.x.toString(),
+        HEIGHT: size.y.toString(),
+        LAYERS: stakkeLayer.layers,
+        QUERY_LAYERS: stakkeLayer.layers,
+        INFO_FORMAT: 'application/json',
+        FEATURE_COUNT: '10',  // Increased to get more features
+        I: point.x.toString(),
+        J: point.y.toString(),
+        EXCEPTIONS: 'application/json',
+        SRS: 'EPSG:4326',  // Added SRS parameter
+        FORMAT: 'image/png'  // Added FORMAT parameter
+      });
+
+      try {
+        const response = await fetch(`${stakkeLayer.url}?${params}`);
+        const data = await response.json();
+        
+        if (data.features && data.features.length > 0) {
+          const feature = data.features[0];
+          
+          // Try both lowercase and original case for the property name
+          const storageId = feature.properties.storagedisplayid || feature.properties.StorageDisplayID;
+          
+          if (storageId) {
+            setPopupContent(`Storage ID: ${storageId}`);
+            setPopupPosition(e.latlng);
+          }
+        } else {
+          console.log('No features found at click location');
+        }
+      } catch (error) {
+        console.error('Error fetching feature info:', error);
+      }
+    };
+
+    mapRef.current.on('click', handleMapClick);
+    return () => {
+      if (mapRef.current) {
+        mapRef.current.off('click', handleMapClick);
+      }
+    };
+  }, []);
+
+  // Add WFS feature fetching
+  useEffect(() => {
+    if (!pk) return;
+
+    const fetchWFSFeatures = async () => {
+      const params = new URLSearchParams({
+        service: 'WFS',
+        version: '1.0.0',
+        request: 'GetFeature',
+        typeName: 'hdgis:DynamicMapPoints',
+        maxFeatures: '100',
+        outputFormat: 'application/json',
+        CQL_FILTER: `pk='${pk}'`
+      });
+
+      try {
+        const url = `https://hdgis.gis.dk/geoserver/hdgis/ows?${params}`;
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        if (!data.features || data.features.length === 0) {
+          // Try without CQL filter
+          const paramsNoFilter = new URLSearchParams({
+            service: 'WFS',
+            version: '1.0.0',
+            request: 'GetFeature',
+            typeName: 'hdgis:DynamicMapPoints',
+            maxFeatures: '1000',
+            outputFormat: 'application/json'
+          });
+          const urlNoFilter = `https://hdgis.gis.dk/geoserver/hdgis/ows?${paramsNoFilter}`;
+          const responseNoFilter = await fetch(urlNoFilter);
+          const dataNoFilter = await responseNoFilter.json();
+          if (dataNoFilter.features?.length > 0) {
+            console.log('Sample feature properties:', dataNoFilter.features[0].properties);
+            console.log('Available property names:', Object.keys(dataNoFilter.features[0].properties));
+          }
+        }
+        
+        setStorageFeatures(data.features || []);
+      } catch (error) {
+        console.error('Error fetching WFS features:', error);
+      }
+    };
+
+    fetchWFSFeatures();
+  }, [pk]);
+
+  // Create labels when features are loaded
+  useEffect(() => {
+    
+    if (!mapReady || !mapRef.current) {
+      return;
+    }
+
+    if (storageFeatures.length === 0) {
+      return;
+    }
+
+    const map = mapRef.current;
+    
+    // Remove existing labels if any
+    if (labels) {
+      map.removeLayer(labels);
+    }
+
+    // Only create labels if stakke layer is active
+    if (!activeLayers.includes('stakke')) {
+      return;
+    }
+
+    const labelGroup = L.layerGroup();
+
+    // Define the coordinate transformations
+    proj4.defs('EPSG:3857', '+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs');
+    proj4.defs('EPSG:4326', '+proj=longlat +datum=WGS84 +no_defs');
+
+    storageFeatures.forEach(feature => {
+      const coords = feature.geometry.coordinates;
+      // Transform coordinates from EPSG:3857 to EPSG:4326
+      const [lng, lat] = proj4('EPSG:3857', 'EPSG:4326', coords);
+      const latLng = L.latLng(lat, lng);
+      const storageId = feature.properties.storagedisplayid;
+
+      // Create a light blue square marker
+      const icon = L.divIcon({
+        className: 'custom-square-marker',
+        html: `<div style="
+          width: 12px;
+          height: 12px;
+          background-color:rgb(5, 52, 181);
+          border: 1px solid white;
+        "></div>`,
+        iconSize: [12, 12],
+        iconAnchor: [6, 6]
+      });
+
+      // Create a marker with the square icon
+      const marker = L.marker(latLng, {
+        icon: icon,
+        interactive: false
+      });
+      marker.addTo(labelGroup);
+
+      // Create a custom div icon for the label
+      const label = L.divIcon({
+        className: 'storage-label',
+        html: `<div style="
+          background: white;
+          border: 1px solid #666;
+          padding: 2px 6px;
+          border-radius: 3px;
+          font-size: 12px;
+          white-space: nowrap;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+          z-index: 9999;
+          pointer-events: none;
+          display: inline-block;
+        ">${storageId}</div>`,
+        iconSize: [0, 0],
+        iconAnchor: [-3, 0]
+      });
+
+      // Create a marker with the label
+      const markerWithLabel = L.marker(latLng, { 
+        icon: label,
+        zIndexOffset: 9999,
+        interactive: false
+      });
+      markerWithLabel.addTo(labelGroup);
+    });
+
+    labelGroup.addTo(map);
+    setLabels(labelGroup);
+
+    return () => {
+      if (labelGroup) {
+        map.removeLayer(labelGroup);
+      }
+    };
+  }, [storageFeatures, mapReady, activeLayers]);
+
+  // Add map ready handler
+  const handleMapReady = () => {
+    setMapReady(true);
+  };
 
   if (!bounds) {
     return <div>Henter lag...</div>;  // Or your preferred loading indicator
@@ -151,43 +385,41 @@ const Map = () => {
         MAP_RESOLUTION: '192',
         FORMAT_OPTIONS: 'dpi:192',
         TRANSPARENT: layer.transparent.toString().toUpperCase(),
-        ...layer.params // Add any layer-specific params (like username/password)
+        ...layer.params
       };
 
       // Add all parameters to URL
       Object.entries(params).forEach(([key, value]) => {
-        url.searchParams.append(key, value);
+        url.searchParams.append(key, value.toString());
       });
 
-      console.log(`Toggling layer: ${layer.name}`);
-      console.log(`Complete WMS URL with current bounds:`);
-      console.log(url.toString());
-      console.log('Current map bounds:', mapBounds.toBBoxString());
-      console.log('Current map size:', mapSize);
     }
 
     setActiveLayers(prev => {
-      let newLayers = [...prev];
+      const newLayers = new Set(prev);
       
       if (layerId === 'veje') {
-        // If toggling Vejtema, also toggle the map symbol layers
-        if (prev.includes('veje')) {
+        const mapSymbolLayers = ['containermapsymbols', 'vejemapsymbols'];
+        if (newLayers.has('veje')) {
           // Remove Vejtema and map symbols
-          newLayers = newLayers.filter(id => 
-            !['veje', 'containermapsymbols', 'vejemapsymbols'].includes(id)
-          );
+          newLayers.delete('veje');
+          mapSymbolLayers.forEach(symbolLayer => newLayers.delete(symbolLayer));
         } else {
           // Add Vejtema and map symbols
-          newLayers.push('veje', 'containermapsymbols', 'vejemapsymbols');
+          newLayers.add('veje');
+          mapSymbolLayers.forEach(symbolLayer => newLayers.add(symbolLayer));
         }
-      } else {
-        // Handle other layers normally
-        newLayers = prev.includes(layerId)
-          ? prev.filter(id => id !== layerId)
-          : [...prev, layerId];
+      } else if (!['containermapsymbols', 'vejemapsymbols'].includes(layerId)) {
+        // Handle non-map-symbol layers normally
+        if (newLayers.has(layerId)) {
+          newLayers.delete(layerId);
+        } else {
+          newLayers.add(layerId);
+        }
       }
+      // Ignore direct toggling of map symbol layers as they're controlled by 'veje'
       
-      return newLayers;
+      return Array.from(newLayers);
     });
   };
 
@@ -212,11 +444,13 @@ const Map = () => {
         layers={wmsLayers}
         activeLayers={activeLayers}
         onLayerToggle={handleLayerToggle}
+        routeInfo={routeInfo}
       />
       <MapContainer
         ref={mapRef}
         bounds={bounds}
         style={{ height: '100%', width: '100%' }}
+        whenReady={handleMapReady}
       >
         {/* Base map layer */}
         <TileLayer
@@ -261,15 +495,30 @@ const Map = () => {
                 params={{
                   layers: layer.layers,
                   styles: '',
+                  buffer: 64,
+                  tiled: true,
+                  tilesorigin: '0,0',
                   ...(layer.requiresPK && pk ? { CQL_FILTER: `pk='${pk}'` } : {}),
                   ...(layer.params || {})
                 }}
               />
             );
           })}
+        
+        {/* Route display */}
+        {routeInfo.isVisible && routeInfo.points.length > 0 && (
+          <Polyline
+            positions={routeInfo.points}
+            color="blue"
+            weight={3}
+            opacity={0.7}
+          />
+        )}
+        
         <LocationMarker />
+        <MapLogo />
         <DigerWMSLayer />
-        <NavigateButton />
+        <NavigateButton onRouteUpdate={(points) => setRouteInfo({ isVisible: true, points })} />
       </MapContainer>
     </div>
   );
@@ -283,6 +532,19 @@ function LocationMarker() {
     [54, 8],  // Default bounds
     [58, 16]
   ]);
+
+  // Create custom SVG icon
+  const customIcon = L.divIcon({
+    className: 'custom-location-marker',
+    html: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="12" cy="12" r="10" fill="#2563EB" fillOpacity="0.2" />
+      <circle cx="12" cy="12" r="6" fill="#2563EB" />
+      <circle cx="12" cy="12" r="3" fill="white" />
+    </svg>`,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+    popupAnchor: [0, -12]
+  });
 
   useEffect(() => {
     if (!map || !pk) return;
@@ -326,7 +588,7 @@ function LocationMarker() {
         ]);
       } catch (error) {
         try {
-          // If DynamicMapStands fails, try DynamicMapPoints
+          // If DynamicMapPoints fails, try DynamicMapPoints
           const data = await tryFetch('hdgis:DynamicMapPoints');
           const { bbxmax, bbxmin, bbymax, bbymin } = data.features[0].properties;
           setBounds([
@@ -343,8 +605,8 @@ function LocationMarker() {
   }, [map, pk]);
 
   return position === null ? null : (
-    <Marker position={position}>
-      <Popup>You are here</Popup>
+    <Marker position={position} icon={customIcon}>
+      <Popup>Din position</Popup>
     </Marker>
   );
 }
@@ -360,12 +622,12 @@ const DigerWMSLayer = () => {
   );
 };
 
-// Add this function inside the Map component
-const NavigateButton = () => {
+// Modify the NavigateButton component to accept onRouteUpdate
+const NavigateButton = ({ onRouteUpdate }: { onRouteUpdate: (points: [number, number][]) => void }) => {
   const map = useMap();
   const points = useMapPoints();
   
-  const handleNavigate = () => {
+  const handleNavigate = async () => {
     const center = map.getCenter();
     
     // Create waypoints string from points
@@ -378,6 +640,10 @@ const NavigateButton = () => {
     
     console.log('Opening navigation with points:', points);
     console.log('Google Maps URL:', googleMapsUrl);
+    
+    // Update route info with the current points
+    const routePoints = points.map(point => point.coordinates as [number, number]);
+    onRouteUpdate(routePoints);
     
     window.open(googleMapsUrl, '_blank');
   };

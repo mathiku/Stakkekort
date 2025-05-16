@@ -1,6 +1,7 @@
 import { WMSLayerConfig } from '../types/map';
 
 export const wmsLayers: WMSLayerConfig[] = [
+  
   {
    id: 'skaermkort',
    name: 'Skærmkort',
@@ -21,7 +22,7 @@ export const wmsLayers: WMSLayerConfig[] = [
    transparent: true,
    requiresPK: false,
    token: '1b6805e6b4e3c9d04af49b8245ab7b20',
-   drawOrder: 0
+   drawOrder: 1
   },
   {
     id: 'ao',
@@ -54,16 +55,6 @@ export const wmsLayers: WMSLayerConfig[] = [
     drawOrder: 11
   },
   {
-    id: 'stakke',
-    name: 'Stakke',
-    url: 'https://hdgis.gis.dk/geoserver/hdgis/wms',
-    layers: 'hdgis:DynamicMapPoints',
-    format: 'image/png',
-    transparent: true,
-    requiresPK: true,
-    drawOrder: 9
-  },
-  {
     id: 'skovkort',
     name: 'Skovkort',
     url: 'https://hdgis.gis.dk/geoserver/hdgis/wms',
@@ -74,6 +65,16 @@ export const wmsLayers: WMSLayerConfig[] = [
     drawOrder: 5
   },
   {
+    id: 'beregnetrute',
+    name: 'Beregnet rute',
+    url: 'https://hdgis.gis.dk/geoserver/hdgis/wms',
+    layers: 'hdgis:CalculatedRoutesHDStak',
+    format: 'image/png',
+    transparent: true,
+    requiresPK: true,
+    drawOrder: 12
+  },
+  {
     id: 'veje',
     name: 'Vejtema',
     url: 'https://hdgis.gis.dk/geoserver/hdgis/wms',
@@ -81,8 +82,8 @@ export const wmsLayers: WMSLayerConfig[] = [
     format: 'image/png',
     transparent: true,
     requiresPK: true,
-    drawOrder: 5
-  },
+    drawOrder: 6
+  }/* ,
   {
     id: 'paragraf3',
     name: 'Beskyttet natur §3',
@@ -171,5 +172,5 @@ export const wmsLayers: WMSLayerConfig[] = [
     format: 'image/png',
     transparent: true,
     drawOrder: 14
-  }
+  } */
 ];

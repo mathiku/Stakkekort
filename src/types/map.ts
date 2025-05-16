@@ -5,10 +5,22 @@ export interface WMSLayerConfig {
   layers: string;
   format: string;
   transparent: boolean;
-  token?: string;
-  requiresPK?: boolean;
   drawOrder: number;
-  params?: {
-    [key: string]: string;
-  };
+  requiresPK?: boolean;
+  token?: string;
+  params?: WMSParams;
+}
+
+export interface WMSParams {
+  layers?: string;
+  styles?: string;
+  format?: string;
+  transparent?: boolean;
+  version?: string;
+  buffer?: number | string;
+  tiled?: boolean;
+  tilesorigin?: string;
+  CQL_FILTER?: string;
+  token?: string;
+  [key: string]: any;
 }

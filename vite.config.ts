@@ -7,4 +7,12 @@ export default defineConfig({
   optimizeDeps: {
     exclude: ['lucide-react'],
   },
+  build: {
+    assetsInlineLimit: 0, // Ensure that all assets are processed as files
+    rollupOptions: {
+      external: [
+        /leaflet\/dist\/images\/.*/  // Exclude Leaflet's default images
+      ]
+    }
+  }
 });
