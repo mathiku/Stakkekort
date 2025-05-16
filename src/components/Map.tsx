@@ -92,41 +92,79 @@ const Map = () => {
         const response = await fetch(url);
         const data = await response.json();
         if (!data.features || data.features.length === 0) {
-          throw new Error(`No features found for ${typeName}`);
+          throw new Error(`No features found for ${typeName} with pk='${pk}'`);
         }
-        return data.features[0].properties;
+        return data.features[0].properties; // Returns { bbxmax, bbxmin, bbymax, bbymin, ... }
       };
 
+      let pointsProperties = null;
+      let standsProperties = null;
+
       try {
-        const standsProperties = await tryFetch('hdgis:DynamicMapStands');
-        const pointsProperties = await tryFetch('hdgis:DynamicMapPoints');
+        // Attempt to fetch DynamicMapPoints - this is critical.
+        pointsProperties = await tryFetch('hdgis:DynamicMapPoints');
 
-        const allBbysMin = [standsProperties.bbymin, pointsProperties.bbymin];
-        const allBbxsMin = [standsProperties.bbxmin, pointsProperties.bbxmin];
-        const allBbysMax = [standsProperties.bbymax, pointsProperties.bbymax];
-        const allBbxsMax = [standsProperties.bbxmax, pointsProperties.bbxmax];
-
-        const overallBbymin = Math.min(...allBbysMin.filter(v => typeof v === 'number'));
-        const overallBbxmin = Math.min(...allBbxsMin.filter(v => typeof v === 'number'));
-        const overallBbymax = Math.max(...allBbysMax.filter(v => typeof v === 'number'));
-        const overallBbxmax = Math.max(...allBbxsMax.filter(v => typeof v === 'number'));
-
-        if (
-          typeof overallBbymin !== 'number' ||
-          typeof overallBbxmin !== 'number' ||
-          typeof overallBbymax !== 'number' ||
-          typeof overallBbxmax !== 'number'
-        ) {
-          throw new Error('Invalid bounding box coordinates received');
+        // Attempt to fetch DynamicMapStands - this is optional.
+        try {
+          standsProperties = await tryFetch('hdgis:DynamicMapStands');
+        } catch (standsError) {
+          console.warn(`Optional: Could not fetch stands properties (pk: ${pk}). Will proceed with points properties if available. Error: ${(standsError as Error).message}`);
+          // standsProperties remains null, this is handled below.
         }
 
-        return [
-          [overallBbymin, overallBbxmin],  // Southwest corner [lat, lng]
-          [overallBbymax, overallBbxmax]   // Northeast corner [lat, lng]
-        ] as [[number, number], [number, number]];
+        // Now determine the bounding box based on what was successfully fetched.
+        if (standsProperties && pointsProperties) {
+          // Both sources available, combine them.
+          const allBbysMin = [standsProperties.bbymin, pointsProperties.bbymin];
+          const allBbxsMin = [standsProperties.bbxmin, pointsProperties.bbxmin];
+          const allBbysMax = [standsProperties.bbymax, pointsProperties.bbymax];
+          const allBbxsMax = [standsProperties.bbxmax, pointsProperties.bbxmax];
+
+          const overallBbymin = Math.min(...allBbysMin.filter(v => typeof v === 'number'));
+          const overallBbxmin = Math.min(...allBbxsMin.filter(v => typeof v === 'number'));
+          const overallBbymax = Math.max(...allBbysMax.filter(v => typeof v === 'number'));
+          const overallBbxmax = Math.max(...allBbxsMax.filter(v => typeof v === 'number'));
+
+          if (
+            typeof overallBbymin !== 'number' || !isFinite(overallBbymin) ||
+            typeof overallBbxmin !== 'number' || !isFinite(overallBbxmin) ||
+            typeof overallBbymax !== 'number' || !isFinite(overallBbymax) ||
+            typeof overallBbxmax !== 'number' || !isFinite(overallBbxmax)
+          ) {
+            console.error('Invalid combined bounding box coordinates after fetching both sources.');
+            throw new Error('Invalid combined bounding box coordinates.');
+          }
+          return [
+            [overallBbymin, overallBbxmin],
+            [overallBbymax, overallBbxmax]
+          ] as [[number, number], [number, number]];
+
+        } else if (pointsProperties) {
+          // Only DynamicMapPoints was available (or stands failed).
+          const { bbxmax, bbxmin, bbymax, bbymin } = pointsProperties;
+          if (
+            typeof bbymin !== 'number' || !isFinite(bbymin) ||
+            typeof bbxmin !== 'number' || !isFinite(bbxmin) ||
+            typeof bbymax !== 'number' || !isFinite(bbymax) ||
+            typeof bbxmax !== 'number' || !isFinite(bbxmax)
+          ) {
+            console.error('Invalid bounding box coordinates from pointsProperties.');
+            throw new Error('Invalid bounding box coordinates from pointsProperties.');
+          }
+          return [
+            [bbymin, bbxmin],
+            [bbymax, bbxmax]
+          ] as [[number, number], [number, number]];
+        } else {
+          // This case (pointsProperties is null) should be caught by the outer catch if tryFetch for points throws.
+          // If we reach here, something unexpected happened.
+          throw new Error('Critical: DynamicMapPoints properties not available after fetch attempt.');
+        }
 
       } catch (error) {
-        console.error('Error fetching combined feature info:', error);
+        // This catches failure from the initial tryFetch('hdgis:DynamicMapPoints') 
+        // or any errors thrown during the processing of coordinates above.
+        console.error(`Error in fetchFeatureInfo (pk: ${pk}): ${(error as Error).message}. Defaulting to standard bounds.`);
         return [
           [54, 8],
           [58, 16]
