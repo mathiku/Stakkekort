@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { WMSLayerConfig } from '../types/map';
 import { useSiteInfo } from '../hooks/useSiteInfo';
+import VejtemaLegend from './vejtemalegend';
+import StakkeLegend from './stakkelegend';
 
 interface LayerControlProps {
   layers: WMSLayerConfig[];
@@ -22,7 +24,7 @@ const LayerLegend: React.FC<{ layer: WMSLayerConfig }> = ({ layer }) => {
   );
 };
 
-const SiteInfoHeader: React.FC<{ siteInfo: { workingsitename: string; workingsiteid: string } }> = ({ siteInfo }) => (
+const SiteInfoHeader: React.FC<{ siteInfo: { workingsitename: string; workingsiteid: string; timestamp: string } }> = ({ siteInfo }) => (
   <div className="px-4 pb-3">
     <div className="mb-1">
       <span className="block text-sm text-gray-500 mt-0.5 leading-tight">
@@ -40,6 +42,14 @@ const SiteInfoHeader: React.FC<{ siteInfo: { workingsitename: string; workingsit
         {siteInfo.workingsiteid}
       </span>
     </div>
+    <div className="mt-1.5">
+      <span className="block text-sm text-gray-500 mt-0.5 leading-tight">
+        Dato:
+      </span>
+      <span className="block text-sm text-gray-700 mt-0.5 leading-tight">
+        {siteInfo.timestamp ? new Date(siteInfo.timestamp).toLocaleDateString('da-DK') : 'Ikke tilgængelig'}
+      </span>
+    </div>
   </div>
 );
 
@@ -51,17 +61,6 @@ const LayerControl: React.FC<LayerControlProps> = ({
 }) => {
   const [isCollapsed, setIsCollapsed] = useState(window.innerWidth < 768);
   const siteInfo = useSiteInfo();
-
-  // Define stakke layer separately since it's WFS
-  const stakkeLayer = {
-    id: 'stakke',
-    name: 'Stakke',
-    url: 'https://hdgis.gis.dk/geoserver/hdgis/wms',
-    layers: 'hdgis:DynamicMapPoints',
-    format: 'image/png',
-    transparent: true,
-    drawOrder: 9
-  };
 
   // Filter out the map symbol layers
   const visibleLayers = layers.filter(
@@ -92,21 +91,30 @@ const LayerControl: React.FC<LayerControlProps> = ({
         
         {/* Layer list */}
         <div className="p-4 pt-2 max-h-[calc(100vh-8rem)] overflow-y-auto">
-          {/* Stakke layer (WFS) */}
-          <div className="flex items-start py-1">
-            <input
-              type="checkbox"
-              id={stakkeLayer.id}
-              checked={activeLayers.includes(stakkeLayer.id)}
-              onChange={() => onLayerToggle(stakkeLayer.id)}
-              className="mt-1 mr-2.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-            />
-            <label htmlFor={stakkeLayer.id} className="text-sm text-gray-700 leading-tight cursor-pointer">
-              {stakkeLayer.name}
-            </label>
-          </div>
-          {/* WMS layers */}
-          {visibleLayers.map((layer) => (
+          {/* WMS Stakke layer at the top */}
+          {(() => {
+            const stakkeWMSLayer = visibleLayers.find(layer => layer.id === 'dynamicmappoints');
+            return stakkeWMSLayer ? (
+              <div key={stakkeWMSLayer.id} className="flex items-start py-1">
+                <input
+                  type="checkbox"
+                  id={stakkeWMSLayer.id}
+                  checked={activeLayers.includes(stakkeWMSLayer.id)}
+                  onChange={() => onLayerToggle(stakkeWMSLayer.id)}
+                  className="mt-1 mr-2.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <label htmlFor={stakkeWMSLayer.id} className="text-sm text-gray-700 leading-tight cursor-pointer">
+                  {stakkeWMSLayer.name}
+                </label>
+                {activeLayers.includes(stakkeWMSLayer.id) && <StakkeLegend />}
+              </div>
+            ) : null;
+          })()}
+          
+          {/* Other WMS layers (excluding the dynamicmappoints which is shown at top) */}
+          {visibleLayers
+            .filter(layer => layer.id !== 'dynamicmappoints')
+            .map((layer) => (
             <div key={layer.id} className="flex items-start py-1">
               <input
                 type="checkbox"
@@ -119,7 +127,7 @@ const LayerControl: React.FC<LayerControlProps> = ({
                 {layer.name}
               </label>
               {layer.id === 'veje' && activeLayers.includes('veje') && (
-                <LayerLegend layer={layer} />
+                <VejtemaLegend />
               )}
             </div>
           ))}

@@ -55,6 +55,7 @@ interface RouteInfo {
 const Map = () => {
   const { pk } = useParams();
   const [error, setError] = useState<string | null>(null);
+  const [isMapOutdated, setIsMapOutdated] = useState<boolean>(false);
   const [routeInfo, setRouteInfo] = useState<RouteInfo>({ isVisible: false, points: [] });
   const [activeLayers, setActiveLayers] = useState<string[]>([
     'skaermkort',  // Skærmkort
@@ -63,14 +64,12 @@ const Map = () => {
     'veje',        // Vejtema
     'containermapsymbols', // Add map symbols initially since veje is active
     'vejemapsymbols',      // Add map symbols initially since veje is active
-    'stakke'       // Add stakke layer initially
+    'dynamicmappoints'     // Add new WMS stakke layer initially
   ]);
   const mapRef = useRef<L.Map | null>(null);
   const [bounds, setBounds] = useState<[[number, number], [number, number]] | null>(null);
   const [popupContent, setPopupContent] = useState<string | null>(null);
   const [popupPosition, setPopupPosition] = useState<L.LatLng | null>(null);
-  const [storageFeatures, setStorageFeatures] = useState<any[]>([]);
-  const [labels, setLabels] = useState<L.LayerGroup | null>(null);
   const [mapReady, setMapReady] = useState(false);
 
   useEffect(() => {
@@ -164,11 +163,11 @@ const Map = () => {
       } catch (error) {
         // This catches failure from the initial tryFetch('hdgis:DynamicMapPoints') 
         // or any errors thrown during the processing of coordinates above.
-        console.error(`Error in fetchFeatureInfo (pk: ${pk}): ${(error as Error).message}. Defaulting to standard bounds.`);
-        return [
-          [54, 8],
-          [58, 16]
-        ] as [[number, number], [number, number]];
+        console.error(`Error in fetchFeatureInfo (pk: ${pk}): ${(error as Error).message}.`);
+        
+        // If both DynamicMapPoints and DynamicMapStands failed, the map is likely outdated
+        setIsMapOutdated(true);
+        return null; // Don't set bounds, let the component show the outdated message
       }
     };
     
@@ -182,216 +181,40 @@ const Map = () => {
     fetchAndSetBounds();
   }, [pk]);
 
-  // Add click handler for WMS layers
-  useEffect(() => {
-    if (!mapRef.current) return;
-
-    const handleMapClick = async (e: L.LeafletMouseEvent) => {
-      const map = mapRef.current;
-      if (!map) return;
-
-      const stakkeLayer = wmsLayers.find(l => l.id === 'stakke');
-      if (!stakkeLayer) return;
-
-      const point = map.latLngToContainerPoint(e.latlng);
-      const size = map.getSize();
-      if (!size) return;
-
-      const params = new URLSearchParams({
-        SERVICE: 'WMS',
-        VERSION: '1.3.0',
-        REQUEST: 'GetFeatureInfo',
-        BBOX: map.getBounds().toBBoxString(),
-        CRS: 'EPSG:4326',
-        WIDTH: size.x.toString(),
-        HEIGHT: size.y.toString(),
-        LAYERS: stakkeLayer.layers,
-        QUERY_LAYERS: stakkeLayer.layers,
-        INFO_FORMAT: 'application/json',
-        FEATURE_COUNT: '10',  // Increased to get more features
-        I: point.x.toString(),
-        J: point.y.toString(),
-        EXCEPTIONS: 'application/json',
-        SRS: 'EPSG:4326',  // Added SRS parameter
-        FORMAT: 'image/png'  // Added FORMAT parameter
-      });
-
-      try {
-        const response = await fetch(`${stakkeLayer.url}?${params}`);
-        const data = await response.json();
-        
-        if (data.features && data.features.length > 0) {
-          const feature = data.features[0];
-          
-          // Try both lowercase and original case for the property name
-          const storageId = feature.properties.storagedisplayid || feature.properties.StorageDisplayID;
-          
-          if (storageId) {
-            setPopupContent(`Storage ID: ${storageId}`);
-            setPopupPosition(e.latlng);
-          }
-        } else {
-          console.log('No features found at click location');
-        }
-      } catch (error) {
-        console.error('Error fetching feature info:', error);
-      }
-    };
-
-    mapRef.current.on('click', handleMapClick);
-    return () => {
-      if (mapRef.current) {
-        mapRef.current.off('click', handleMapClick);
-      }
-    };
-  }, []);
-
-  // Add WFS feature fetching
-  useEffect(() => {
-    if (!pk) return;
-
-    const fetchWFSFeatures = async () => {
-      const params = new URLSearchParams({
-        service: 'WFS',
-        version: '1.0.0',
-        request: 'GetFeature',
-        typeName: 'hdgis:DynamicMapPoints',
-        maxFeatures: '100',
-        outputFormat: 'application/json',
-        CQL_FILTER: `pk='${pk}'`
-      });
-
-      try {
-        const url = `https://hdgis.gis.dk/geoserver/hdgis/ows?${params}`;
-        const response = await fetch(url);
-        const data = await response.json();
-        
-        if (!data.features || data.features.length === 0) {
-          // Try without CQL filter
-          const paramsNoFilter = new URLSearchParams({
-            service: 'WFS',
-            version: '1.0.0',
-            request: 'GetFeature',
-            typeName: 'hdgis:DynamicMapPoints',
-            maxFeatures: '1000',
-            outputFormat: 'application/json'
-          });
-          const urlNoFilter = `https://hdgis.gis.dk/geoserver/hdgis/ows?${paramsNoFilter}`;
-          const responseNoFilter = await fetch(urlNoFilter);
-          const dataNoFilter = await responseNoFilter.json();
-          if (dataNoFilter.features?.length > 0) {
-            console.log('Sample feature properties:', dataNoFilter.features[0].properties);
-            console.log('Available property names:', Object.keys(dataNoFilter.features[0].properties));
-          }
-        }
-        
-        setStorageFeatures(data.features || []);
-      } catch (error) {
-        console.error('Error fetching WFS features:', error);
-      }
-    };
-
-    fetchWFSFeatures();
-  }, [pk]);
-
-  // Create labels when features are loaded
-  useEffect(() => {
-    
-    if (!mapReady || !mapRef.current) {
-      return;
-    }
-
-    if (storageFeatures.length === 0) {
-      return;
-    }
-
-    const map = mapRef.current;
-    
-    // Remove existing labels if any
-    if (labels) {
-      map.removeLayer(labels);
-    }
-
-    // Only create labels if stakke layer is active
-    if (!activeLayers.includes('stakke')) {
-      return;
-    }
-
-    const labelGroup = L.layerGroup();
-
-    // Define the coordinate transformations
-    proj4.defs('EPSG:3857', '+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs');
-    proj4.defs('EPSG:4326', '+proj=longlat +datum=WGS84 +no_defs');
-
-    storageFeatures.forEach(feature => {
-      const coords = feature.geometry.coordinates;
-      // Transform coordinates from EPSG:3857 to EPSG:4326
-      const [lng, lat] = proj4('EPSG:3857', 'EPSG:4326', coords);
-      const latLng = L.latLng(lat, lng);
-      const storageId = feature.properties.storagedisplayid;
-
-      // Create a light blue square marker
-      const icon = L.divIcon({
-        className: 'custom-square-marker',
-        html: `<div style="
-          width: 12px;
-          height: 12px;
-          background-color:rgb(5, 52, 181);
-          border: 1px solid white;
-        "></div>`,
-        iconSize: [12, 12],
-        iconAnchor: [6, 6]
-      });
-
-      // Create a marker with the square icon
-      const marker = L.marker(latLng, {
-        icon: icon,
-        interactive: false
-      });
-      marker.addTo(labelGroup);
-
-      // Create a custom div icon for the label
-      const label = L.divIcon({
-        className: 'storage-label',
-        html: `<div style="
-          background: white;
-          border: 1px solid #666;
-          padding: 2px 6px;
-          border-radius: 3px;
-          font-size: 12px;
-          white-space: nowrap;
-          box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-          z-index: 9999;
-          pointer-events: none;
-          display: inline-block;
-        ">${storageId}</div>`,
-        iconSize: [0, 0],
-        iconAnchor: [-3, 0]
-      });
-
-      // Create a marker with the label
-      const markerWithLabel = L.marker(latLng, { 
-        icon: label,
-        zIndexOffset: 9999,
-        interactive: false
-      });
-      markerWithLabel.addTo(labelGroup);
-    });
-
-    labelGroup.addTo(map);
-    setLabels(labelGroup);
-
-    return () => {
-      if (labelGroup) {
-        map.removeLayer(labelGroup);
-      }
-    };
-  }, [storageFeatures, mapReady, activeLayers]);
-
   // Add map ready handler
   const handleMapReady = () => {
     setMapReady(true);
   };
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-red-50">
+        <div className="text-red-600 text-xl">{error}</div>
+      </div>
+    );
+  }
+
+  if (isMapOutdated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center p-8 bg-white rounded-lg shadow-lg max-w-md">
+          <div className="text-gray-800 text-lg mb-4">
+            Kortet er ikke længere aktivt.
+            Hvis dette er en fejl, så kontakt os på mail.
+          </div>
+          <div className="text-gray-600">
+            Kontakt{' '}
+            <a 
+              href="mailto:ADegn@dalgas.com" 
+              className="text-blue-600 hover:text-blue-800 underline"
+            >
+              ADegn@dalgas.com
+            </a>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (!bounds) {
     return <div>Henter lag...</div>;  // Or your preferred loading indicator
@@ -467,14 +290,6 @@ const Map = () => {
     .sort((a, b) => b.drawOrder - a.drawOrder);  // Higher drawOrder on top
 
   /* console.log('Ordered layers:', orderedLayers.map(l => ({ id: l.id, drawOrder: l.drawOrder }))); */
-
-  if (error) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-red-50">
-        <div className="text-red-600 text-xl">{error}</div>
-      </div>
-    );
-  }
 
   return (
     <div className="h-screen w-full relative">

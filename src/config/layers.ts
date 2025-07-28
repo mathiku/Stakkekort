@@ -83,6 +83,19 @@ export const wmsLayers: WMSLayerConfig[] = [
     transparent: true,
     requiresPK: true,
     drawOrder: 6
+  },
+  {
+    id: 'dynamicmappoints',
+    name: 'Stakke',
+    url: 'https://hdgis.gis.dk/geoserver/hdgis/wms',
+    layers: 'hdgis:DynamicMapPoints',
+    format: 'image/png',
+    transparent: true,
+    requiresPK: true,
+    drawOrder: 15,
+    params: {
+      styles: 'AOpoints' // Using the AOpoints style as shown in the GeoServer interface
+    }
   }/* ,
   {
     id: 'paragraf3',

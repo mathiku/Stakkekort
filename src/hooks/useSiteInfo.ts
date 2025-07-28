@@ -4,6 +4,7 @@ import { useParams } from 'react-router-dom';
 interface SiteInfo {
   workingsitename: string;
   workingsiteid: string;
+  timestamp: string;
 }
 
 export const useSiteInfo = () => {
@@ -35,16 +36,18 @@ export const useSiteInfo = () => {
       };
 
       try {
-        // Try DynamicMapStands first
-        const data = await tryFetch('hdgis:DynamicMapStands');
-        const { workingsitename, workingsiteid } = data.features[0].properties;
-        setSiteInfo({ workingsitename, workingsiteid });
+        // Try DynamicMapPoints first (has timestamp)
+        const pointsData = await tryFetch('hdgis:DynamicMapPoints');
+        const { workingsitename, workingsiteid, timestamp } = pointsData.features[0].properties;
+        console.log('DynamicMapPoints properties:', pointsData.features[0].properties);
+        setSiteInfo({ workingsitename, workingsiteid, timestamp });
       } catch (error) {
         try {
-          // If DynamicMapStands fails, try DynamicMapPoints
-          const data = await tryFetch('hdgis:DynamicMapPoints');
-          const { workingsitename, workingsiteid } = data.features[0].properties;
-          setSiteInfo({ workingsitename, workingsiteid });
+          // If DynamicMapPoints fails, try DynamicMapStands (no timestamp)
+          const standsData = await tryFetch('hdgis:DynamicMapStands');
+          const { workingsitename, workingsiteid } = standsData.features[0].properties;
+          console.log('DynamicMapStands properties:', standsData.features[0].properties);
+          setSiteInfo({ workingsitename, workingsiteid, timestamp: '' });
         } catch (fallbackError) {
           console.error('Error fetching site info:', fallbackError);
           setSiteInfo(null);
